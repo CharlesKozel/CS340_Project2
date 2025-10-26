@@ -13,20 +13,21 @@ class wildcat_sender(threading.Thread):
 
         self.window_size = window_size
         self.inflight_window = {}
-        self.current_seq_num = random.randint(0, MAX_UINT16)
 
         self.my_tunnel = my_tunnel
         self.my_logger = my_logger
         self.die = False
         # add as needed
-        # seq num counter, start at 0
+        # start of cwnd (lowest#/oldest unACK'd pkt)
+        self.base = 0
+        # seq num counter, start at 0 (end of cwnd, next seq num to send)
         self.next_seq = 0
 
     def new_packet(self, packet_byte_array):
         ''' invoked when user sends a payload
         (Send with self.my_tunnel.magic_send(packet)) '''
         # build MSG: 2B seq (uint16), payload, 2B checksum (CRC32 & OxFFFF)
-        # take curr seq
+        # take curr seq (lowest 16 bits)
         seq = self.next_seq & 0xFFFF
         # pack seq num as 2Bs (big-endian)
         seq_bytes = struct.pack("!H", seq)
@@ -77,6 +78,7 @@ class wildcat_sender(threading.Thread):
         ''' invoked when an ACK arrives '''
         # TODO: your implementation comes here
         print(f"received : {packet_byte_array}")
+        base = 
         pass
     
     def run(self):
@@ -88,4 +90,4 @@ class wildcat_sender(threading.Thread):
     
     def join(self):
         self.die = True
-        super().join()
+        super().join(
