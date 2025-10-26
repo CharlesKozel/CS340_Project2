@@ -12,10 +12,15 @@ class wildcat_receiver(threading.Thread):
         # add as needed
 
     def receive(self, packet_byte_array):
+        ''' invoked when a MSG arrives
+        Drop packets outside the receiver window '''
         # TODO: your implementation comes here
         pass
 
     def run(self):
+        ''' background loop as needed 
+        Send with self.my_tunnel.magic_send(packet) 
+        When a payload is delivered in order, call self.my_logger.commit(payload) (grading counts only committed data)'''
         while not self.die:
             # TODO: your implementation comes here
             pass

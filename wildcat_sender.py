@@ -12,14 +12,19 @@ class wildcat_sender(threading.Thread):
         # add as needed
     
     def new_packet(self, packet_byte_array):
+        ''' invoked when user sends a payload
+        (Send with self.my_tunnel.magic_send(packet)) '''
         # TODO: your implementation comes here
         pass
 
     def receive(self, packet_byte_array):
+        ''' invoked when an ACK arrives '''
         # TODO: your implementation comes here
         pass
     
     def run(self):
+        ''' background loop for timers/retransmissions
+        Retransmit unacked packets within 0.5 s '''
         while not self.die:
             # TODO: your implementation comes here
             pass
