@@ -12,11 +12,12 @@ class wildcat_sender(threading.Thread):
         # add as needed
     
     def new_packet(self, packet_byte_array):
-        # TODO: your implementation comes here
-        pass
+        print(f"sending : {packet_byte_array}")
+        self.my_tunnel.magic_send(packet_byte_array)
 
     def receive(self, packet_byte_array):
         # TODO: your implementation comes here
+        print(f"received : {packet_byte_array}")
         pass
     
     def run(self):

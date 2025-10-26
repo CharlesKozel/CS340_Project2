@@ -12,8 +12,8 @@ class wildcat_receiver(threading.Thread):
         # add as needed
 
     def receive(self, packet_byte_array):
-        # TODO: your implementation comes here
-        pass
+        print(f"received : {packet_byte_array}")
+        self.my_tunnel.magic_send(packet_byte_array)
 
     def run(self):
         while not self.die:
