@@ -14,8 +14,8 @@ class wildcat_receiver(threading.Thread):
     def receive(self, packet_byte_array):
         ''' invoked when a MSG arrives
         Drop packets outside the receiver window '''
-        # TODO: your implementation comes here
-        pass
+        print(f"received : {packet_byte_array}")
+        self.my_tunnel.magic_send(packet_byte_array)
 
     def run(self):
         ''' background loop as needed 
