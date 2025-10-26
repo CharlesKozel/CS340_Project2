@@ -1,5 +1,6 @@
 import common
 import threading
+import struct
 
 class wildcat_receiver(threading.Thread):
     def __init__(self, allowed_loss, window_size, my_tunnel, my_logger):
@@ -15,7 +16,11 @@ class wildcat_receiver(threading.Thread):
         ''' invoked when a MSG arrives
         Drop packets outside the receiver window '''
         print(f"received : {packet_byte_array}")
+        seq_num = self.get_seq_num(packet_byte_array)
         self.my_tunnel.magic_send(packet_byte_array)
+
+    def get_seq_num(self, byte_array):
+        return struct.unpack("!H", byte_array[:2])[0]
 
     def run(self):
         ''' background loop as needed 

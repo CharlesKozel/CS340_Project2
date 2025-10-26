@@ -2,19 +2,26 @@ import common
 import threading
 import struct
 import zlib
+import random
+
+MAX_UINT16 = 65535
 
 class wildcat_sender(threading.Thread):
     def __init__(self, allowed_loss, window_size, my_tunnel, my_logger):
         super(wildcat_sender, self).__init__()
         self.allowed_loss = allowed_loss
+
         self.window_size = window_size
+        self.inflight_window = {}
+        self.current_seq_num = random.randint(0, MAX_UINT16)
+
         self.my_tunnel = my_tunnel
         self.my_logger = my_logger
         self.die = False
         # add as needed
         # seq num counter, start at 0
         self.next_seq = 0
-    
+
     def new_packet(self, packet_byte_array):
         ''' invoked when user sends a payload
         (Send with self.my_tunnel.magic_send(packet)) '''
@@ -35,9 +42,36 @@ class wildcat_sender(threading.Thread):
 
         print(f"sending : {packet_byte_array}")
         # send thru magic tunnel
+        seq_num = self.get_and_inc_seq_num()
         self.my_tunnel.magic_send(packet_byte_array)
         # adv seq num (wrap at 2^16)
         self.next_seq = (self.next_seq + 1) & 0xFFFF
+
+        timeout = threading.Timer(0.5, self.timeout_callback, args=(packet_byte_array,))
+        timeout.start()
+
+        self.inflight_window[seq_num] = (packet_byte_array, timeout)
+
+    def send_packet(self, byte_array_with_headers):
+        seq_num = self.get_seq_num(byte_array_with_headers)
+        self.my_tunnel.magic_send(byte_array_with_headers)
+
+        timeout = threading.Timer(0.5, self.timeout_callback, args=(byte_array_with_headers,))
+        timeout.start()
+        self.inflight_window[seq_num] = (byte_array_with_headers, timeout)
+
+
+    def get_seq_num(self, byte_array):
+        return struct.unpack("!H", byte_array[:2])[0]
+
+
+    def timeout_callback(self, byte_array):
+        print(f"timed out for : {byte_array}")
+        pass
+
+    def get_and_inc_seq_num(self):
+        self.current_seq_num = (self.current_seq_num + 1) % MAX_UINT16
+        return self.current_seq_num
 
     def receive(self, packet_byte_array):
         ''' invoked when an ACK arrives '''
