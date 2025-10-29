@@ -1,9 +1,6 @@
-import common
 import threading
 import struct
 import zlib
-import random
-
 
 
 class wildcat_sender(threading.Thread):
@@ -57,17 +54,32 @@ class wildcat_sender(threading.Thread):
         timeout.start()
         self.inflight_window[seq_num] = (byte_array_with_headers, timeout)
 
-    def timeout_callback(self, byte_array):
-        print(f"timed out for : {byte_array}")
-        # TODO: decide to resend based on target % loss
+    def timeout_callback(self, byte_array_with_headers):
+        print(f"timed out for : {get_seq_num(byte_array_with_headers)}, resending...")
+        self.send_packet(byte_array_with_headers)
 
     def receive(self, packet_byte_array):
         ''' invoked when an ACK arrives '''
-        # TODO: your implementation comes here
-        print(f"received : {packet_byte_array}")
-        #base =
-        pass
-    
+        print(f"sender received : {packet_byte_array}")
+
+        if not does_checksum_match(packet_byte_array):
+            print("Dropping corrupted ack")
+            return
+
+        seq_num = get_seq_num(packet_byte_array)
+        self.confirm_packet_delivery(seq_num)
+
+        #TODO: remove any skipped packets from inflight_window, based on ack data seq_num or bytearray
+
+
+    def confirm_packet_delivery(self, seq_num):
+        if seq_num in self.inflight_window:
+            timeout = self.inflight_window[seq_num][1]
+            timeout.cancel()
+            del self.inflight_window[seq_num]
+        else:
+            print("Ack for untracked seq_num, ignoring")
+
     def run(self):
         ''' background loop for timers/retransmissions
         Retransmit unacked packets within 0.5 s '''
