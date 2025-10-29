@@ -69,16 +69,24 @@ class wildcat_sender(threading.Thread):
     def timeout_callback(self, byte_array):
         print(f"timed out for : {byte_array}")
         pass
-
-    def get_and_inc_seq_num(self):
-        self.current_seq_num = (self.current_seq_num + 1) % MAX_UINT16
-        return self.current_seq_num
+    
+    def adv_base(self):
+        '''Advance base to lowest unACK'd seq num. If none, then base is next_seq'''
+        # everything ACKd, base catches up to next_seq
+        if not self.inflight_window:
+            self.base = self.next_seq & 0xFFFF
+            return
+        
+        # move base up 1 until it's in the window (meaning has reached the lowest unACKd) or it reaches end of window (so catches up w/ next one to send which is the 1st outside the window since all in window were ACKd & those outside aren't sent yet so must be unACKd)
+        while (self.base not in self.inflight_window) and (self.base != self.next_seq):
+            self.base = (self.base + 1) & 0xFFFF
 
     def receive(self, packet_byte_array):
         ''' invoked when an ACK arrives '''
         # TODO: your implementation comes here
         print(f"received : {packet_byte_array}")
-        base = 
+        # move window up b/c received ACK
+        self.adv_base(self)
         pass
     
     def run(self):
@@ -90,4 +98,4 @@ class wildcat_sender(threading.Thread):
     
     def join(self):
         self.die = True
-        super().join(
+        super().join()
