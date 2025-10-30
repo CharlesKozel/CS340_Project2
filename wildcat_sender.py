@@ -10,7 +10,8 @@ class wildcat_sender(threading.Thread):
 
         self.window_size = window_size
         self.inflight_window = {}
-        self.snd_wnd_seq_num = 0
+        self.snd_wnd_seq_num = 0 # tracks seq num for sent packets
+        self.rcv_wnd_seq_num = 0 # tracks acks indicating what receiver window is at
 
         self.my_tunnel = my_tunnel
         self.my_logger = my_logger
@@ -83,6 +84,11 @@ class wildcat_sender(threading.Thread):
         self.confirm_packet_delivery(seq_num)
 
         #TODO: remove any skipped packets from inflight_window, based on ack data seq_num or bytearray
+
+    def did_receiver_advanced_seq_num(self, rcv_seq_num):
+        distance = (rcv_seq_num - self.snd_wnd_seq_num) & 0xFFFF
+        return 0 < distance < 32768
+
 
     def confirm_packet_delivery(self, seq_num):
         if seq_num in self.inflight_window:
