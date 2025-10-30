@@ -27,15 +27,15 @@ class wildcat_receiver(threading.Thread):
         #print(f"received : {packet_byte_array}")
 
         if not does_checksum_match(packet_byte_array):
-            print("Dropping corrupted packet")
+            print("RCVR: Dropping corrupted packet")
             return # drop corrupted packets
 
         seq_num = get_seq_num(packet_byte_array)
         if self.is_outside_window(seq_num):
-            print(f"Dropping packet outside window : {seq_num}")
+            print(f"RCVR: Dropping packet outside window : {seq_num}")
             return # drop packet if outside window
 
-        print(f"Receiver received packet : {seq_num}")
+        print(f"RCVR:  received packet : {seq_num}")
 
         payload = get_payload(packet_byte_array)
         self.received_window[seq_num] = payload
@@ -43,6 +43,7 @@ class wildcat_receiver(threading.Thread):
 
         ack = self.create_ack_packet()
         self.my_tunnel.magic_send(ack)
+        print(f"RCVR: Sent ACK : {get_seq_num(ack)}")
 
     def is_outside_window(self, seq_num):
         distance = (seq_num - self.rcv_wnd_seq_num) & 0xFFFF # handles wrap around
@@ -52,7 +53,7 @@ class wildcat_receiver(threading.Thread):
         # Process consecutive packets first
         while self.rcv_wnd_seq_num in self.received_window:
             self.my_logger.commit(self.received_window[self.rcv_wnd_seq_num])
-            print(f"Committed packet {self.rcv_wnd_seq_num}")
+            print(f"RCVR: Committed packet {self.rcv_wnd_seq_num}")
             self.count_success += 1
             del self.received_window[self.rcv_wnd_seq_num]
             self.rcv_wnd_seq_num = (self.rcv_wnd_seq_num + 1) & 0xFFFF

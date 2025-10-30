@@ -23,7 +23,7 @@ class wildcat_sender(threading.Thread):
         (Send with self.my_tunnel.magic_send(packet)) '''
 
         if self.is_rcv_wnd_full():
-            print("Rcv window full, queueing packet")
+            print("SND: Rcv window full, queueing packet")
             self.queue_pkt(packet_byte_array)
             return
 
@@ -49,10 +49,10 @@ class wildcat_sender(threading.Thread):
         self.print_window()
 
     def print_window(self):
-        print(f"window : {[seq_num for seq_num in self.inflight_window.keys()]}")
+        print(f"SND: window : {[seq_num for seq_num in self.inflight_window.keys()]}")
 
     def send_packet(self, byte_array_with_headers):
-        print(f"sending : {get_seq_num(byte_array_with_headers)}")
+        print(f"SND: sending : {get_seq_num(byte_array_with_headers)}")
         seq_num = get_seq_num(byte_array_with_headers)
         # actual send
         self.my_tunnel.magic_send(byte_array_with_headers)
@@ -62,7 +62,7 @@ class wildcat_sender(threading.Thread):
         self.inflight_window[seq_num] = (byte_array_with_headers, timeout)
 
     def timeout_callback(self, byte_array_with_headers):
-        print(f"timed out for : {get_seq_num(byte_array_with_headers)}, resending...")
+        print(f"SND: timed out for : {get_seq_num(byte_array_with_headers)}, resending...")
         self.send_packet(byte_array_with_headers)
 
     def receive(self, packet_byte_array):
@@ -70,17 +70,17 @@ class wildcat_sender(threading.Thread):
         #print(f"sender received : {packet_byte_array}")
 
         if not does_checksum_match(packet_byte_array):
-            print("Dropping corrupted ack")
+            print("SND: Dropping corrupted ack")
             return
 
         latest_rcv_seq_num = get_seq_num(packet_byte_array)
-        print(f"got ack for : {latest_rcv_seq_num}")
+        print(f"SND: got ack for : {latest_rcv_seq_num}")
 
         if self.did_receiver_advance_seq_num(latest_rcv_seq_num):
-            print("receiver advanced seq num")
+            print("SND: receiver advanced seq num")
             # sender advanced its window, drop any inflight packet tracking outside the receiver window
             while self.rcv_wnd_seq_num != latest_rcv_seq_num:
-                print(f"dropping packet {self.rcv_wnd_seq_num} from window")
+                print(f"SND: dropping packet {self.rcv_wnd_seq_num} from window")
                 timeout = self.inflight_window[self.rcv_wnd_seq_num][1]
                 timeout.cancel()
                 del self.inflight_window[self.rcv_wnd_seq_num]
