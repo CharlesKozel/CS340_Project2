@@ -19,7 +19,6 @@ class wildcat_sender(threading.Thread):
         # start of cwnd (lowest#/oldest unACK'd pkt)
         self.base = 0
 
-
     def new_packet(self, packet_byte_array):
         ''' invoked when user sends a payload
         (Send with self.my_tunnel.magic_send(packet)) '''
@@ -57,6 +56,17 @@ class wildcat_sender(threading.Thread):
     def timeout_callback(self, byte_array_with_headers):
         print(f"timed out for : {get_seq_num(byte_array_with_headers)}, resending...")
         self.send_packet(byte_array_with_headers)
+    
+    def adv_base(self):
+        '''Advance base to lowest unACK'd seq num. If none, then base is next_seq'''
+        # everything ACKd, base catches up to next_seq
+        if not self.inflight_window:
+            self.base = self.next_seq & 0xFFFF
+            return
+        
+        # move base up 1 until it's in the window (meaning has reached the lowest unACKd) or it reaches end of window (so catches up w/ next one to send which is the 1st outside the window since all in window were ACKd & those outside aren't sent yet so must be unACKd)
+        while (self.base not in self.inflight_window) and (self.base != self.next_seq):
+            self.base = (self.base + 1) & 0xFFFF
 
     def receive(self, packet_byte_array):
         ''' invoked when an ACK arrives '''
@@ -67,10 +77,12 @@ class wildcat_sender(threading.Thread):
             return
 
         seq_num = get_seq_num(packet_byte_array)
+
+        # rec'd ACK so adv base (bottom of send window)
+        self.adv_base(self)
         self.confirm_packet_delivery(seq_num)
 
         #TODO: remove any skipped packets from inflight_window, based on ack data seq_num or bytearray
-
 
     def confirm_packet_delivery(self, seq_num):
         if seq_num in self.inflight_window:
