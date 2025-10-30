@@ -7,22 +7,26 @@ class wildcat_sender(threading.Thread):
     def __init__(self, allowed_loss, window_size, my_tunnel, my_logger):
         super(wildcat_sender, self).__init__()
         self.allowed_loss = allowed_loss
-
-        self.window_size = window_size
-        self.inflight_window = {}
-        self.snd_wnd_seq_num = 0 # tracks seq num for sent packets
-        self.rcv_wnd_seq_num = 0 # tracks acks indicating what receiver window is at
-
         self.my_tunnel = my_tunnel
         self.my_logger = my_logger
         self.die = False
-        # add as needed
-        # start of cwnd (lowest#/oldest unACK'd pkt)
-        self.base = 0
+        self.window_size = window_size
+
+        self.inflight_window = {}
+        self.snd_wnd_seq_num = 0 # tracks seq num for sent packets
+        self.rcv_wnd_seq_num = 0 # tracks acks indicating what receiver window is at
+        self.packet_queue = []
+
 
     def new_packet(self, packet_byte_array):
         ''' invoked when user sends a payload
         (Send with self.my_tunnel.magic_send(packet)) '''
+
+        if self.is_rcv_wnd_full():
+            print("Rcv window full, queueing packet")
+            self.queue_pkt(packet_byte_array)
+            return
+
         # build MSG: 2B seq (uint16), payload, 2B checksum (CRC32 & OxFFFF)
         # take curr seq (lowest 16 bits)
         seq = self.snd_wnd_seq_num & 0xFFFF
@@ -46,15 +50,8 @@ class wildcat_sender(threading.Thread):
     def send_packet(self, byte_array_with_headers):
         print(f"sending : {byte_array_with_headers}")
         seq_num = get_seq_num(byte_array_with_headers)
-
-        # check if seq_num in rcv wnd (safe to send?)
-            # 2nd item in tuple is upper seq num of rcv wnd
-        if seq_num < self.est_rcv_wnd_range(seq_num)[1]:
-            # actual send
-            self.my_tunnel.magic_send(byte_array_with_headers)
-        else:
-            # otherwise queue pkt for later sending
-            self.queue_pkt(byte_array_with_headers)
+        # actual send
+        self.my_tunnel.magic_send(byte_array_with_headers)
 
         timeout = threading.Timer(0.5, self.timeout_callback, args=(byte_array_with_headers,))
         timeout.start()
@@ -63,17 +60,6 @@ class wildcat_sender(threading.Thread):
     def timeout_callback(self, byte_array_with_headers):
         print(f"timed out for : {get_seq_num(byte_array_with_headers)}, resending...")
         self.send_packet(byte_array_with_headers)
-    
-    def adv_base(self):
-        '''Advance base to lowest unACK'd seq num. If none, then base is next_seq'''
-        # everything ACKd, base catches up to next_seq
-        if not self.inflight_window:
-            self.base = self.next_seq & 0xFFFF
-            return
-        
-        # move base up 1 until it's in the window (meaning has reached the lowest unACKd) or it reaches end of window (so catches up w/ next one to send which is the 1st outside the window since all in window were ACKd & those outside aren't sent yet so must be unACKd)
-        while (self.base not in self.inflight_window) and (self.base != self.next_seq):
-            self.base = (self.base + 1) & 0xFFFF
 
     def receive(self, packet_byte_array):
         ''' invoked when an ACK arrives '''
@@ -83,45 +69,61 @@ class wildcat_sender(threading.Thread):
             print("Dropping corrupted ack")
             return
 
-        seq_num = get_seq_num(packet_byte_array)
+        latest_rcv_seq_num = get_seq_num(packet_byte_array)
 
-        # rec'd ACK so adv base (bottom of send window)
-        self.adv_base(self)
-        self.confirm_packet_delivery(seq_num)
+        if self.did_receiver_advance_seq_num(latest_rcv_seq_num):
+            # sender advanced its window, drop any inflight packet tracking outside the receiver window
+            while self.rcv_wnd_seq_num != latest_rcv_seq_num:
+                timeout = self.inflight_window[self.rcv_wnd_seq_num][1]
+                timeout.cancel()
+                del self.inflight_window[self.rcv_wnd_seq_num]
+                self.rcv_wnd_seq_num = (self.rcv_wnd_seq_num + 1) & 0xFFFF
 
-        #TODO: remove any skipped packets from inflight_window, based on ack data seq_num or bytearray
+        # Handle other packets whose ACKs might have been lost, but we know they were received b/c of the window_bitmap
+        rcv_window_bitmap = extract_window_bitmap(packet_byte_array)
+        for window_index in range(self.window_size):
+            if rcv_window_bitmap & (1 << window_index):
+                packet_seq_num = (latest_rcv_seq_num + window_index) & 0xFFFF
+                if packet_seq_num in self.inflight_window:
+                    timeout = self.inflight_window[packet_seq_num][1]
+                    timeout.cancel()
+                    del self.inflight_window[packet_seq_num]
 
-    def did_receiver_advance_seq_num(self, rcv_seq_num):
-        distance = (rcv_seq_num - self.snd_wnd_seq_num) & 0xFFFF
+        # Got an ACK, process queue to see if any more packets can be sent
+        self.process_queue()
+
+    def did_receiver_advance_seq_num(self, latest_rcv_seq_num):
+        distance = (latest_rcv_seq_num - self.rcv_wnd_seq_num) & 0xFFFF
         return 0 < distance < 32768
-    
-    def est_rcv_wnd_range(self, seq_num):
-        # passed rcv seq num from ack (got by receive())
-        # new rcv wnd range = [new rcv seq num (start of wnd), += wnd_size]
-        return (seq_num, seq_num + self.window_size)
-    
-    def queue_pkt(self, packet):
-        # if next_seq > upper limit of rcv wnd (est_rcv_wnd_range), wait to send until false
-        pass
 
-    def confirm_packet_delivery(self, seq_num):
-        if seq_num in self.inflight_window:
-            timeout = self.inflight_window[seq_num][1]
-            timeout.cancel()
-            del self.inflight_window[seq_num]
-        else:
-            print("Ack for untracked seq_num, ignoring")
+    def is_rcv_wnd_full(self) -> bool:
+        max_rcv_seq_num = (self.rcv_wnd_seq_num + self.window_size) & 0xFFFF
+        snd_wnd_distance = (max_rcv_seq_num - self.snd_wnd_seq_num) & 0xFFFF
+        # snd_wnd_distance > 0 => not full
+        # <32768 b/c negative distance gets converted to 65536 - distance, assume >32768(2^15) is negative => full
+        return not (0 < snd_wnd_distance < 32768)
+
+    def queue_pkt(self, packet):
+        # if next_seq > upper limit of rcv wnd (est_rcv_wnd_range), wait to send until window moves forward
+        self.packet_queue.append(packet)
+
+    def process_queue(self):
+        while len(self.packet_queue) > 0 and not self.is_rcv_wnd_full():
+            packet = self.packet_queue.pop(0)
+            self.new_packet(packet) #TODO: consider new_packet to only be called externally, refactor logic accordingly
 
     def run(self):
         ''' background loop for timers/retransmissions
         Retransmit unacked packets within 0.5 s '''
         while not self.die:
-            # TODO: your implementation comes here
             pass
     
     def join(self):
         self.die = True
         super().join()
+
+def extract_window_bitmap(byte_array) -> int:
+    return int.from_bytes(get_payload(byte_array), byteorder='big')
 
 def compute_checksum(byte_array) -> int:
     # keep lower 16 bits to fit in 2 byte checksum header

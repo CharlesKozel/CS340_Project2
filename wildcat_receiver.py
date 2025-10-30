@@ -81,7 +81,7 @@ class wildcat_receiver(threading.Thread):
 
     def create_ack_packet(self):
         seq_bytes = struct.pack("!H", self.rcv_wnd_seq_num)
-        bitmap = self.create_ack_bitmaps()
+        bitmap = self.create_ack_bitmap()
         body = seq_bytes + bitmap
 
         checksum = zlib.crc32(body) & 0xFFFF
@@ -89,7 +89,7 @@ class wildcat_receiver(threading.Thread):
         return body + ck_bytes
 
 
-    def create_ack_bitmaps(self) -> bytes:
+    def create_ack_bitmap(self) -> bytes:
         bitmap = 0
         for window_index in range(self.window_size):
             seq_bit_i = (self.rcv_wnd_seq_num + window_index) & 0xFFFF
