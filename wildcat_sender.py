@@ -47,8 +47,14 @@ class wildcat_sender(threading.Thread):
         print(f"sending : {byte_array_with_headers}")
         seq_num = get_seq_num(byte_array_with_headers)
 
-        # actual send
-        self.my_tunnel.magic_send(byte_array_with_headers)
+        # check if seq_num in rcv wnd (safe to send?)
+            # 2nd item in tuple is upper seq num of rcv wnd
+        if seq_num < self.est_rcv_wnd_range(seq_num)[1]:
+            # actual send
+            self.my_tunnel.magic_send(byte_array_with_headers)
+        else:
+            # otherwise queue pkt for later sending
+            self.queue_pkt(byte_array_with_headers)
 
         timeout = threading.Timer(0.5, self.timeout_callback, args=(byte_array_with_headers,))
         timeout.start()
@@ -85,10 +91,18 @@ class wildcat_sender(threading.Thread):
 
         #TODO: remove any skipped packets from inflight_window, based on ack data seq_num or bytearray
 
-    def did_receiver_advanced_seq_num(self, rcv_seq_num):
+    def did_receiver_advance_seq_num(self, rcv_seq_num):
         distance = (rcv_seq_num - self.snd_wnd_seq_num) & 0xFFFF
         return 0 < distance < 32768
-
+    
+    def est_rcv_wnd_range(self, seq_num):
+        # passed rcv seq num from ack (got by receive())
+        # new rcv wnd range = [new rcv seq num (start of wnd), += wnd_size]
+        return (seq_num, seq_num + self.window_size)
+    
+    def queue_pkt(self, packet):
+        # if next_seq > upper limit of rcv wnd (est_rcv_wnd_range), wait to send until false
+        pass
 
     def confirm_packet_delivery(self, seq_num):
         if seq_num in self.inflight_window:
