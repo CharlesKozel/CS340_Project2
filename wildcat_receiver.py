@@ -24,7 +24,7 @@ class wildcat_receiver(threading.Thread):
         self.count_fail = 0
 
     def receive(self, packet_byte_array):
-        print(f"received : {packet_byte_array}")
+        #print(f"received : {packet_byte_array}")
 
         if not does_checksum_match(packet_byte_array):
             print("Dropping corrupted packet")
@@ -32,7 +32,10 @@ class wildcat_receiver(threading.Thread):
 
         seq_num = get_seq_num(packet_byte_array)
         if self.is_outside_window(seq_num):
+            print(f"Dropping packet outside window : {seq_num}")
             return # drop packet if outside window
+
+        print(f"Receiver received packet : {seq_num}")
 
         payload = get_payload(packet_byte_array)
         self.received_window[seq_num] = payload
@@ -49,23 +52,25 @@ class wildcat_receiver(threading.Thread):
         # Process consecutive packets first
         while self.rcv_wnd_seq_num in self.received_window:
             self.my_logger.commit(self.received_window[self.rcv_wnd_seq_num])
+            print(f"Committed packet {self.rcv_wnd_seq_num}")
             self.count_success += 1
             del self.received_window[self.rcv_wnd_seq_num]
             self.rcv_wnd_seq_num = (self.rcv_wnd_seq_num + 1) & 0xFFFF
 
         # Check if we can skip packets within allowed loss budget
-        for could_skip_i in range(1, self.get_could_skip_N_packets() + 1):
-            next_valid_seq_num = (self.rcv_wnd_seq_num + could_skip_i) & 0xFFFF
-            if next_valid_seq_num in self.received_window:
-                # Count all skipped packets as failures
-                self.count_fail += could_skip_i
-                # Process the found packet
-                self.my_logger.commit(self.received_window[next_valid_seq_num])
-                self.count_success += 1
-                del self.received_window[next_valid_seq_num]
-                self.rcv_wnd_seq_num = (next_valid_seq_num + 1) & 0xFFFF
-                # Recursively process any consecutive packets after this
-                return self.process_window()
+        # for could_skip_i in range(1, self.get_could_skip_N_packets() + 1):
+        #     next_valid_seq_num = (self.rcv_wnd_seq_num + could_skip_i) & 0xFFFF
+        #     if next_valid_seq_num in self.received_window:
+        #         print(f"Skipping {could_skip_i} packets, found packet {next_valid_seq_num} in window")
+        #         # Count all skipped packets as failures
+        #         self.count_fail += could_skip_i
+        #         # Process the found packet
+        #         self.my_logger.commit(self.received_window[next_valid_seq_num])
+        #         self.count_success += 1
+        #         del self.received_window[next_valid_seq_num]
+        #         self.rcv_wnd_seq_num = (next_valid_seq_num + 1) & 0xFFFF
+        #         # Recursively process any consecutive packets after this
+        #         return self.process_window()
 
 
     # maybe better way to implement this logic, but the idea is if you can skip N packets
